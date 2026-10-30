@@ -1,4 +1,14 @@
-const supabase = require("../config/supabase");
+const isUuid = (value) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+
+const logDatabaseError = (operation, error) => {
+    console.error(`${operation} failed:`, {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+    });
+};
 
 // GET all published challenges
 const getChallenges = async (req, res) => {
@@ -20,9 +30,10 @@ const getChallenges = async (req, res) => {
         });
 
     } catch (error) {
+        logDatabaseError("Challenge list fetch", error);
         res.status(500).json({
             success: false,
-            message: error.message
+            message: "Unable to fetch challenges"
         });
     }
 };
@@ -31,6 +42,12 @@ const getChallenges = async (req, res) => {
 const getChallengeById = async (req, res) => {
     try {
         const { id } = req.params;
+        if (!isUuid(id)) {
+            return res.status(400).json({
+                success: false,
+                message: "Challenge ID must be a valid UUID"
+            });
+        }
 
         const { data, error } = await req.supabase
             .from("challenges")
@@ -56,9 +73,10 @@ const getChallengeById = async (req, res) => {
         });
 
     } catch (error) {
+        logDatabaseError("Challenge fetch", error);
         res.status(500).json({
             success: false,
-            message: error.message
+            message: "Unable to fetch challenge"
         });
     }
 };
@@ -69,9 +87,15 @@ const getChallengeById = async (req, res) => {
 const submitChallengeAnswer = async (req, res) => {
     try {
         const { id } = req.params;
-        const { answer } = req.body;
+        const { answer } = req.body || {};
 
-        // Validate answer
+        if (!isUuid(id)) {
+            return res.status(400).json({
+                success: false,
+                message: "Challenge ID must be a valid UUID"
+            });
+        }
+
         if (typeof answer !== "string" || !answer.trim()) {
             return res.status(400).json({
                 success: false,
@@ -89,17 +113,45 @@ const submitChallengeAnswer = async (req, res) => {
         );
 
         if (error) {
-            console.error("Submission error:", error.message);
+            logDatabaseError("Challenge submission RPC", error);
 
-            return res.status(400).json({
+            if (error.code === "22P02") {
+                return res.status(400).json({
+                    success: false,
+                    message: "Challenge ID or answer is invalid"
+                });
+            }
+
+            if (error.code === "42501") {
+                return res.status(403).json({
+                    success: false,
+                    message: "You do not have permission to submit this answer"
+                });
+            }
+
+            return res.status(500).json({
                 success: false,
-                message: "Unable to submit answer. Check the challenge ID and try again."
+                message: "Unable to submit answer right now"
             });
         }
 
-        const result = data[0];
+        const result = Array.isArray(data) ? data[0] : data;
+        if (
+            !result ||
+            typeof result.is_correct !== "boolean" ||
+            typeof result.xp_earned !== "number" ||
+            typeof result.already_rewarded !== "boolean" ||
+            typeof result.total_xp !== "number" ||
+            typeof result.current_level !== "number"
+        ) {
+            console.error("Challenge submission RPC returned an unexpected result shape");
+            return res.status(500).json({
+                success: false,
+                message: "Unable to process the submission result"
+            });
+        }
 
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
             message: result.is_correct
                 ? "Correct answer!"
@@ -114,7 +166,7 @@ const submitChallengeAnswer = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Controller error:", error.message);
+        logDatabaseError("Challenge submission", error);
 
         res.status(500).json({
             success: false,

@@ -13,7 +13,7 @@ const attemptRoutes = require("./routes/attempt.routes");
 
 const achievementRoutes = require("./routes/achievement.routes");
 
-
+const profileRoutes = require("./routes/profile.routes");
 
 require("dotenv").config();
 
@@ -61,6 +61,7 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/progress", progressRoutes);
 app.use("/api/attempts", attemptRoutes);
 app.use("/api/achievements", achievementRoutes);
+app.use("/api/profile", profileRoutes);
 // Start server
 const PORT = process.env.PORT || 5000;
 
